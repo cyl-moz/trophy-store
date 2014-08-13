@@ -18,3 +18,9 @@ def index(request, template='certmanager/home.html'):
     data = {}  # You'd add data here that you're sending to the template.
     log.debug("I'm alive!")
     return render(request, template, data)
+
+def foo(request, template='certmanager/foo.html'):
+    """Main view."""
+    data = {}  # You'd add data here that you're sending to the template.
+    log.debug("I'm alive!")
+    return render(request, template, data)
