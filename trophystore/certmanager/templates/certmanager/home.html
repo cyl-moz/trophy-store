@@ -1,7 +1,10 @@
 {% extends "certmanager/base.html" %}
 
+{% block site_css %}
+        <link href="{{ static('browserid/persona-buttons.css') }}" rel="stylesheet">
+{% endblock %}
+
 {% block content %}
-{{ browserid_info() }}
 
 <h1>
     <a href="/">{{ _('Hello world') }}</a>
@@ -9,9 +12,9 @@
 
 {% if request.user.is_active %}
   <p>Current user: {{ user.email }}</p>
-    {{ browserid_logout(text='Logout') }}
+    {{ browserid_logout() }}
 {% else %}
-    {{ browserid_login(text='Login', color='dark') }}
+    {{ browserid_login() }}
 {% endif %}
 
 {# L10n: This is a localizer comment #}
