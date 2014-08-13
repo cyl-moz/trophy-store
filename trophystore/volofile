@@ -1,0 +1,143 @@
+var fs = require('fs');
+var path = require('path');
+
+module.exports = {
+    // Install Sandstone inside a Django/Playdoh container
+    install_sandstone: {
+        run: function(d, v, namedArgs) {
+            var projectName = namedArgs.project + '/',
+            includeBase = true;
+
+            // If a user wishes to upgrade their assets but, not overwrite
+            // their base.html template, they can pass base=skip on the
+            // command line and that step will be skipped.
+            if(typeof namedArgs.base !== undefined) {
+                // To gaurd against accidental overwrite of the base template,
+                // we here ensure that the value pased to the base argument is
+                // indeed 'skip'.
+                includeBase = namedArgs.base === 'skip' ? false : includeBase;
+            }
+
+            if(!projectName) {
+                console.log('Please specify you project name using the project=name argument');
+                return;
+            }
+
+            function finished_message() {
+                console.log('\nSandstone installed\n');
+            }
+
+            v.command('add', 'ossreleasefeed/Sandstone', 'tmp')
+                .then(function() {
+                    var templateDir = projectName + 'templates/' + projectName + '/',
+                        projectStatic = projectName + '/static/',
+                        lessFileDir = projectStatic + 'css',
+                        jsFileDir = projectStatic + 'js',
+                        fontFilesDir = projectStatic + 'fonts',
+                        imgFilesDir = projectStatic + 'img';
+
+                    // Before copying, we need to manipulate some strings in the files
+                    // to ensure they are found and loaded inside it's new home.
+                    console.log('Rewriting file contents to fix asset paths...');
+                    var lessFileList = fs.readdirSync('tmp/css/sandstone'),
+                        tmpLESSPath = 'tmp/css/sandstone/',
+                        file = "";
+
+                    for(file in lessFileList) {
+                        if(lessFileList.hasOwnProperty(file)) {
+                            var currentFile = "",
+                                currentFileContents = "",
+                                // We want to match only /img, img, /fonts or fonts,
+                                // but take care not to match the word 'fonts' in ex.
+                                // @import "fonts.less" or img in `img, `
+                                regexp = /\/?\bmedia\/img\b[^,\s]|\bmedia\/fonts\b[^\.]/g,
+                                newSubStr = lessFileList[file] === 'fonts.less' ? 'static/fonts/' : '/static/img/';
+                                processedStr = "";
+
+                            currentFile = tmpLESSPath + lessFileList[file];
+                            currentFileContents = fs.readFileSync(currentFile, 'utf-8');
+
+                            processedStr = currentFileContents.replace(regexp, newSubStr);
+                            // Write processed text back to the file
+                            fs.writeFileSync(currentFile, processedStr, 'utf-8');
+                        }
+                    }
+
+                    console.log('Copying files....');
+
+                    // Copy the LESS files
+                    v.copyDir('tmp/css', lessFileDir);
+
+                    // Copy js files
+                    v.copyDir('tmp/js', jsFileDir);
+
+                    // Copy fonts
+                    v.copyDir('tmp/fonts', fontFilesDir);
+
+                    // Copy images
+                    v.copyDir('tmp/img', imgFilesDir);
+
+                    if(includeBase) {
+                        // Copy base template
+                        v.copyFile('tmp/base.html', templateDir + 'base.html');
+                    }
+
+                    // Remove the temporary files
+                    v.rm('tmp');
+
+                    finished_message();
+                })
+                .then(d.resolve, d.reject);
+        }
+    },
+    // Add sandstone to a specific folder
+    add_sandstone: {
+        run: function(d, v, namedArgs) {
+
+            // Both of the command line params are optional so, fallback to defaults
+            // as appropriate.
+            var folderName = namedArgs.folder ? namedArgs.folder : process.cwd(),
+                addGrunt = namedArgs.grunt ? namedArgs.grunt : false;
+
+            function finished_message() {
+                console.log('\nSandstone installed\n');
+            }
+
+            v.command('add', 'ossreleasefeed/Sandstone', 'tmp')
+                .then(function() {
+
+                    console.log('Copying files....');
+
+                    // Copy the LESS files
+                    v.copyDir('tmp/css', folderName + '/css');
+
+                    // Copy js files
+                    v.copyDir('tmp/js', folderName + '/js');
+
+                    // Copy fonts
+                    v.copyDir('tmp/media/fonts', folderName + '/media/fonts');
+
+                    // Copy images
+                    v.copyDir('tmp/media/img', folderName + '/media/img');
+
+                    // Does the user want to add Grunt?
+                    if(addGrunt) {
+                        v.copyFile('tmp/Gruntfile.js', process.cwd() + '/Gruntfile.js');
+                        v.copyFile('tmp/package.json', process.cwd() + '/package.json');
+                    }
+
+                    // Add .gitignore with default exclusions
+                    v.copyFile('tmp/.gitignore', process.cwd() + '/.gitignore');
+
+                    // Copy base template
+                    v.copyFile('tmp/index.html', 'index.html');
+
+                    // Remove the temporary files
+                    v.rm('tmp');
+
+                    finished_message();
+                })
+                .then(d.resolve, d.reject);
+        }
+    }
+};

@@ -1,0 +1,8 @@
+{
+  "volo": {
+    "dependencies": {
+      "volofile": "github:ossreleasefeed/Sandstone/master#volofile",
+      "tmp": "github:ossreleasefeed/Sandstone/v0.7.2"
+    }
+  }
+}
