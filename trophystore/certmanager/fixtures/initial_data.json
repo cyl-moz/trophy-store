@@ -1,0 +1,23 @@
+[
+    {
+        "fields": {
+            "record": "aws_351644144250"
+        },
+        "model": "certmanager.choices",
+        "pk": 1
+    },
+    {
+        "fields": {
+            "record": "aws_142069644989"
+        },
+        "model": "certmanager.choices",
+        "pk": 2
+    },
+    {
+        "fields": {
+            "record": "aws_361527076523"
+        },
+        "model": "certmanager.choices",
+        "pk": 3
+    }
+]

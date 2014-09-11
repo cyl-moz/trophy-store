@@ -17,6 +17,10 @@ INSTALLED_APPS = list(INSTALLED_APPS) + [
     '%s.base' % PROJECT_MODULE,
     # Certificate Manager
     '%s.certmanager' % PROJECT_MODULE,
+    # Django session framework
+    'django.contrib.sessions',
+    # Django message framework
+    'django.contrib.messages'
 ]
 
 # Note! If you intend to add `south` to INSTALLED_APPS,
@@ -24,6 +28,10 @@ INSTALLED_APPS = list(INSTALLED_APPS) + [
 #INSTALLED_APPS.remove('django_nose')
 #INSTALLED_APPS.append('django_nose')
 
+MIDDLEWARE_CLASSES = list(MIDDLEWARE_CLASSES) + [
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware'
+]
 
 LOCALE_PATHS = (
     os.path.join(ROOT, PROJECT_MODULE, 'locale'),
@@ -47,9 +55,10 @@ LOGIN_URL = '/'
 LOGIN_REDIRECT_URL = '/'
 LOGIN_REDIRECT_URL_FAILURE = '/'
 
-TEMPLATE_CONTEXT_PROCESSORS += (
-    # other possible context processors here...
-)
+#TEMPLATE_CONTEXT_PROCESSORS += (
+#    'django.contrib.messages.context_processors.messages'
+#    # other possible context processors here...
+#)
 
 # Should robots.txt deny everything or disallow a calculated list of URLs we
 # don't want to be crawled?  Default is false, disallow everything.

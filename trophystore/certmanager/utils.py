@@ -1,0 +1,260 @@
+import models
+import requests
+from OpenSSL import crypto
+import json
+import commonware
+import os.path
+import ConfigParser
+import yaml
+import boto.iam
+
+log = commonware.log.getLogger('playdoh')
+API_SITE = 'https://www.digicert.com/clients/rest/api'
+
+def dump_rsa_privatekey(pkey):
+    """
+    Dump a private rsa key to a buffer
+
+    :param pkey: The PKey to dump
+    :return: The buffer with the dumped key in
+    :rtype: :py:data:`str`
+    """
+
+    # Based off of https://github.com/pyca/pyopenssl/blob/27398343217703c5261e67d6c19dda89ba559f1b/OpenSSL/crypto.py#L1418-L1466
+
+    from OpenSSL._util import (
+        ffi as _ffi,
+        lib as _lib,
+        exception_from_error_queue as _exception_from_error_queue)
+
+    from OpenSSL import crypto
+    from functools import partial
+
+    class Error(Exception):
+        """
+        An error occurred in an `OpenSSL.crypto` API.
+        """
+
+    _raise_current_error = partial(_exception_from_error_queue, Error)
+
+    bio = crypto._new_mem_buf()
+
+    cipher_obj = _ffi.NULL
+
+    rsa = _lib.EVP_PKEY_get1_RSA(pkey._pkey)
+    helper = crypto._PassphraseHelper(crypto.FILETYPE_PEM, None)
+    result_code = _lib.PEM_write_bio_RSAPrivateKey(
+        bio, rsa, cipher_obj, _ffi.NULL, 0,
+        helper.callback, helper.callback_args)
+    helper.raise_if_problem()
+
+    if result_code == 0:
+        _raise_current_error()
+
+    return crypto._bio_to_string(bio)
+
+def get_config():
+    try:
+        with open(os.path.expanduser('~/.trophystore.yaml')) as f:
+            return yaml.load(f)
+    except:
+        return False
+
+def get_digicert_credentials():
+    config = get_config()
+    if config:
+        return (config['digicert']['account_id'],
+                config['digicert']['api_key'])
+    else:
+        return False
+
+
+def call_digicert_api(url_suffix,
+                      data,
+                      method='POST'):
+    headers = {'content-type': 'application/vnd.digicert.rest-v1+json',
+               'User-Agent': 'trophystore-certmanager/1.0.0'}
+    url = API_SITE + url_suffix
+
+    log.debug("Calling Digicert API with method %s at url %s with data %s" % (method, url, data))
+    
+    digicert_credentials = get_digicert_credentials()
+    log.debug("Using creds %s and %s" % digicert_credentials)
+
+    if not digicert_credentials:
+        return [False, 
+                "Unable to read digicert credentials from config", 
+                {'errors': [{'code': 0, 
+                             'description': ''}]
+                }
+               ]
+    
+    response = requests.request(method,
+                                url, 
+                                data=json.dumps(data) if not data is None else None, 
+                                headers=headers, 
+                                auth=digicert_credentials)
+    status_code_map = {200: [True, ''],
+                       201: [True, 'Created'],
+                       204: [True, 'No content'],
+                       400: [False, 'General client error'],
+                       401: [False, 'Invalid account ID and API key combination'],
+                       403: [False, 'API key missing permissions required'],
+                       404: [False, 'Page does not exist'],
+                       405: [False, 'Method not found'],
+                       406: [False, 'Requested content type or API version is invalid']}
+
+    log.debug("%s : Digicert API response code %s : '%s' and body %s" 
+                  % (status_code_map[response.status_code][0],
+                     response.status_code,
+                     status_code_map[response.status_code][1],
+                     response.text))
+                       
+    if response.status_code in [200, 201, 204, 400, 401, 404, 405, 406]:
+        return status_code_map[response.status_code] + [response.json()]
+    elif response.status_code in [403]:
+        return (status_code_map[response.status_code] + 
+                [{'errors': [{'code': response.status_code, 'description': response.text()}]}])
+    else:
+        return [False, 
+                'API is unavailable', 
+                {'errors': [{'code': response.status_code, 
+                             'description': response.text()}]
+                }
+               ]
+
+
+def generate_csr(certificate):
+    pkey_type = crypto.TYPE_RSA
+    pkey_bits = 2048
+    digest_type = 'md5'
+    pkey = crypto.PKey()
+    pkey.generate_key(pkey_type, pkey_bits)
+    #certificate.private_key = crypto.dump_privatekey(crypto.FILETYPE_PEM, pkey)
+    #certificate.save()
+
+    req = crypto.X509Req()
+    subj = req.get_subject()
+    for key in certificate.openssl_arg_map:
+        if not getattr(certificate, key) in [None, '']:
+            setattr(subj, certificate.openssl_arg_map[key], getattr(certificate, key))
+
+    # TODO : add sans : http://stackoverflow.com/a/25714864/168874
+
+    # We are not adding oids like streetAddress and postalCode to the CSR
+    
+    req.set_pubkey(pkey)
+    req.sign(pkey, digest_type)
+    #certificate.certificate_request = crypto.dump_certificate_request(crypto.FILETYPE_PEM, req)
+    #certificate.save()
+    return (dump_rsa_privatekey(pkey),
+            crypto.dump_certificate_request(crypto.FILETYPE_PEM, req))
+    
+def submit_certificate_request(certificate):
+    data = {}
+    (private_key, csr) = generate_csr(certificate)
+    certificate.private_key = private_key
+    certificate.csr = csr
+    certificate.save()
+    for key in certificate.__dict__:
+        if type(getattr(certificate, key)) == list:
+            data[key] = ', '.join(getattr(certificate, key))
+        elif key in ['validity', 
+                     'common_name', 
+                     'sans', 
+                     'server_type', 
+                     'signature_hash', 
+                     'org_unit', 
+                     'org_name', 
+                     'org_addr1', 
+                     'org_addr2', 
+                     'org_city', 
+                     'org_state', 
+                     'org_zip', 
+                     'org_country', 
+                     'ev',
+                     'csr']:
+            data[key] = getattr(certificate, key)
+        else:
+            continue
+
+    response = call_digicert_api('/enterprise/certificate/ssl',
+                                 data)
+    log.debug(response)
+    if response[0]:
+        return response[2]['request_id']
+    else:
+        return False
+
+def approve_request(certificate):
+    response = call_digicert_api('/request/%s' % certificate.request_id,
+                                 {'note': 'Certificate request approved by trophystore'},
+                                 'APPROVE')
+    if response[0]:
+        return response[2]['order_id']
+    else:
+        return False
+
+def reject_request(certificate):
+    response = call_digicert_api('/request/%s' % certificate.request_id,
+                                 {'note': 'Certificate request rejected by trophystore'},
+                                 'REJECT')
+    if response[0]:
+        return True
+    else:
+        return False
+
+def fetch_certificate(certificate):
+    response = call_digicert_api('/order/%s/certificate' % certificate.order_id,
+                                 None,
+                                 'GET')
+    if response[0]:
+        certificate.serial = response[2]['serial']
+        certificate.certificate = response[2]['certs']['certificate']
+        certificate.intermediate_cert = response[2]['certs']['intermediate']
+        certificate.root_cert = response[2]['certs']['root']
+        certificate.pkcs7 = response[2]['certs']['pkcs7']
+        certificate.save()
+        return True
+    else:
+        return False
+
+def install_certificate_in_aws(destination, certificate, config):
+    path = '/'
+    region = 'universal'
+    # Note here we don't use region because IAM isn't bound to a region
+    conn_iam = boto.iam.connect_to_region(region, 
+                                          profile_name=config['boto_profile_name'])
+
+    existing_certs = conn_iam.get_all_server_certs(path_prefix=path)['list_server_certificates_response']['list_server_certificates_result']['server_certificate_metadata_list']
+
+    if certificate.common_name in [x['server_certificate_name'] for x in existing_certs]:
+        log.error("Certificate already exists in %s" % destination)
+
+    request_params = {'cert_name': certificate.common_name.replace("\r",""),
+                      'cert_body': certificate.certificate.replace("\r",""),
+                      'private_key': certificate.private_key.replace("\r",""),
+                      'cert_chain': certificate.intermediate_cert.replace("\r","") + certificate.root_cert.replace("\r",""),
+                      'path': path}
+
+    #request_params['cert_chain'] = None
+    log.debug("Submitting request to AWS to install certificate : %s" % json.dumps(request_params, indent=4))
+    response = conn_iam.upload_server_cert(**request_params)
+    
+    log.debug("Installed certificate %s with response %s" % (certificate.common_name, response))
+
+def deploy_certificate(certificate):
+    config = get_config()
+    if not config:
+        return {None: False}
+    result = {}
+    for destination in certificate.destinations.all():
+        if config['destinations'][destination.record]['type'] == 'AWS':
+            result[destination.record] = install_certificate_in_aws(destination, 
+                                                             certificate, 
+                                                             config['destinations'][destination.record])
+                        
+        else:
+            log.error("Unknown destination type %s" 
+                      % config['destinations'][destination.record]['type'])
+    return result

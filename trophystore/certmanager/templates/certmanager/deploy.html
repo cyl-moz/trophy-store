@@ -1,0 +1,23 @@
+{% extends "certmanager/base.html" %}
+
+{% block page_title %}{{ super() }} - Deploy certificates{% endblock %}
+
+{% block content %}
+{{ browserid_info() }}
+
+<h1>Deploy certificates</h1>
+
+{% if messages %}
+<ul class="messages">
+    {% for message in messages %}
+    <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+
+{% endblock %}
+
+{% block site_js %}
+    {{ super() }}
+    {{ browserid_js() }}
+{% endblock %}
