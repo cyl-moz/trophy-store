@@ -4,3 +4,6 @@
 [submodule "vendor-local/src/pyopenssl"]
 	path = vendor-local/src/pyopenssl
 	url = https://github.com/pyca/pyopenssl.git
+[submodule "vendor-local/src/django-browserid"]
+	path = vendor-local/src/django-browserid
+	url = git://github.com/mozilla/django-browserid.git
