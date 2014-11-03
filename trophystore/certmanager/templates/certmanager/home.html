@@ -20,9 +20,13 @@
 </ul>
 {% endif %}
 
+{% if is_mozillian %}
 <a href="{{ url('request') }}" class="button button-blue">Request Certificate</a>
 <a href="{{ url('display_list') }}" class="button button-blue">Approve Certificates</a>
 <a href="{{ url('deploy') }}" class="button button-blue">Deploy Certificates</a>
+{% else %}
+<p>Please login to use Trophy Store with an @mozilla.com email address</p>
+{% endif %}
 
 {% endblock %}
 

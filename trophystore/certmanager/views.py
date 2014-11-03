@@ -11,10 +11,12 @@ from django import forms
 from models import Certificate
 import utils
 
-from django.http import HttpResponseRedirect
 import django.core.urlresolvers
 
 from django.contrib import messages
+from django.shortcuts import redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import user_passes_test
 
 log = commonware.log.getLogger('playdoh')
 
@@ -74,15 +76,19 @@ class CertificateForm(ModelForm):
 #                   'org_contact_telephone',
 #                   'org_contact_telephone_ext',
                   'ev',
+                  'business_unit',
                   'destinations']
+
+def is_mozillian(user):
+    return user.is_authenticated() and user.email.endswith('@mozilla.com')
 
 # @mobile_template('examples/{mobile/}home.html')
 def index(request, template='certmanager/home.html'):
     """Main view."""
-    data = {}  # You'd add data here that you're sending to the template.
-    log.debug("I'm alive!")
+    data = {'is_mozillian' : is_mozillian(request.user)}
     return render(request, template, data)
 
+@user_passes_test(is_mozillian)
 def request(request, template='certmanager/request.html'):
     """Request a certificate"""
     if request.method == 'POST':
@@ -105,13 +111,14 @@ def request(request, template='certmanager/request.html'):
                                      'Certificate request for %s failed' 
                                      % new_cert.common_name)
                 new_cert.delete()
-            return HttpResponseRedirect(django.core.urlresolvers.reverse('request'))
+            return redirect(django.core.urlresolvers.reverse('request'))
     else:
         form = CertificateForm()
 
-    data = {'form': form}  # You'd add data here that you're sending to the template.
+    data = {'form': form}
     return render(request, template, data)
 
+@user_passes_test(is_mozillian)
 def display_list(request, template='certmanager/display_list.html'):
     """Display a list of requests"""
     if request.method == 'POST' and 'action' in request.POST:
@@ -129,7 +136,7 @@ def display_list(request, template='certmanager/display_list.html'):
             else:
                 messages.add_message(request, messages.ERROR, 'Certificate %s approval failed' 
                                      % certificate.common_name)
-            return HttpResponseRedirect(django.core.urlresolvers.reverse('display_list'))
+            return redirect(django.core.urlresolvers.reverse('display_list'))
         elif request.POST['action'] == 'reject':
             log.info('Reject %s' % request.POST['id'])
             result = utils.reject_request(certificate)
@@ -141,10 +148,10 @@ def display_list(request, template='certmanager/display_list.html'):
             else:
                 messages.add_message(request, messages.ERROR, 'Certificate %s rejection failed' 
                                      % certificate.common_name)
-            return HttpResponseRedirect(django.core.urlresolvers.reverse('display_list'))
+            return redirect(django.core.urlresolvers.reverse('display_list'))
         else:
             log.error('Unexpected submission of %s in display' % request.POST['action'])
-            return HttpResponseRedirect(django.core.urlresolvers.reverse('display_list'))
+            return redirect(django.core.urlresolvers.reverse('display_list'))
 
     else:
         log.debug("Request is %s" % request.POST)
@@ -152,6 +159,7 @@ def display_list(request, template='certmanager/display_list.html'):
                                     ).filter(request_id__isnull=False)}  
         return render(request, template, data)
 
+@user_passes_test(is_mozillian)
 def display_cert(request, id, template='certmanager/display_cert.html'):
     """Display a single certificate"""
     
@@ -175,6 +183,7 @@ def display_cert(request, id, template='certmanager/display_cert.html'):
                 'certificate': certificate}
         return render(request, template, data)
 
+@user_passes_test(is_mozillian)
 def deploy(request, template='certmanager/deploy.html'):
     certificates = Certificate.objects.all().filter(state__exact=Certificate.APPROVED)
     

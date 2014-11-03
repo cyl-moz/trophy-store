@@ -55,19 +55,33 @@ def dump_rsa_privatekey(pkey):
 
 def get_config():
     try:
-        with open(os.path.expanduser('~/.trophystore.yaml')) as f:
-            return yaml.load(f)
+        with open(os.path.expanduser('/etc/trophystore.yaml')) as f:
+            data = yaml.load(f)
+            if ('certificate_authorities' in data and
+                type(data['certificate_authorities']) == dict and
+                'destinations' in data and
+                type(data['destinations']) == dict and
+                len(data['destinations']) >= 1 and
+                len(data['certificate_authorities']) >= 1):
+                return data
+            else:
+                return False
     except:
         return False
 
-def get_digicert_credentials():
+def get_digicert_credentials(account_name=None):
     config = get_config()
-    if config:
-        return (config['digicert']['account_id'],
-                config['digicert']['api_key'])
-    else:
+    if not config:
         return False
-
+    if account_name is None:
+        # If there are multiple digicert accounts and no account_name
+        # is specified, the first one found is used
+        account_name = next((x for x in config['certificate_authorities'] 
+             if config['certificate_authorities'][x]['type'] == 'digicert'), None)
+    if account_name not in config['certificate_authorities']:
+        return False
+    return (config['certificate_authorities'][account_name]['account_id'],
+            config['certificate_authorities'][account_name]['api_key'])
 
 def call_digicert_api(url_suffix,
                       data,
@@ -173,7 +187,8 @@ def submit_certificate_request(certificate):
                      'org_zip', 
                      'org_country', 
                      'ev',
-                     'csr']:
+                     'csr',
+                     'business_unit']:
             data[key] = getattr(certificate, key)
         else:
             continue
@@ -219,17 +234,25 @@ def fetch_certificate(certificate):
     else:
         return False
 
+def get_aws_credentials(destination, config):
+    import boto.sts
+    conn_sts = boto.sts.connect_to_region('us-east-1')
+    return conn_sts.assume_role(config['iam_role'],
+                                'TrophyStoreSession')
+
 def install_certificate_in_aws(destination, certificate, config):
     path = '/'
-    region = 'universal'
-    # Note here we don't use region because IAM isn't bound to a region
-    conn_iam = boto.iam.connect_to_region(region, 
-                                          profile_name=config['boto_profile_name'])
+    region = 'universal' # The region used when interacting with boto.iam
+    assumed_role = get_aws_credentials(destination, config)
+    conn_iam = boto.iam.connect_to_region(region,
+                                          aws_access_key_id=assumed_role.credentials.access_key, 
+                                          aws_secret_access_key=assumed_role.credentials.secret_key,
+                                          security_token=assumed_role.credentials.session_token)
 
-    existing_certs = conn_iam.get_all_server_certs(path_prefix=path)['list_server_certificates_response']['list_server_certificates_result']['server_certificate_metadata_list']
+    existing_certs = conn_iam.list_server_certs(path_prefix=path)['list_server_certificates_response']['list_server_certificates_result']['server_certificate_metadata_list']
 
     if certificate.common_name in [x['server_certificate_name'] for x in existing_certs]:
-        log.error("Certificate already exists in %s" % destination)
+        log.error("Certificate already exists in %s" % destination.record)
 
     request_params = {'cert_name': certificate.common_name.replace("\r",""),
                       'cert_body': certificate.certificate.replace("\r",""),
@@ -237,11 +260,26 @@ def install_certificate_in_aws(destination, certificate, config):
                       'cert_chain': certificate.intermediate_cert.replace("\r","") + certificate.root_cert.replace("\r",""),
                       'path': path}
 
-    #request_params['cert_chain'] = None
     log.debug("Submitting request to AWS to install certificate : %s" % json.dumps(request_params, indent=4))
-    response = conn_iam.upload_server_cert(**request_params)
+    return conn_iam.upload_server_cert(**request_params)
+
+def install_certificate_in_stingray(destination, certificate, config):
+    url = "https://%s:9070/api/tm/3.0/config/active" % config['hostname']
+    headers = {'content-type': 'application/json'}
+    client = requests.Session()
+    client.auth = (config['username'], config['password'])
+    client.verify = False # This is to accommodate stingrays with self-signed certs
     
-    log.debug("Installed certificate %s with response %s" % (certificate.common_name, response))
+    properties = {'note': certificate.common_name.replace("\r",""),
+                  'private': certificate.private_key.replace("\r",""),
+                  'public': certificate.certificate.replace("\r","") + 
+                            certificate.intermediate_cert.replace("\r","") + 
+                            certificate.root_cert.replace("\r","")}
+    data = {'properties': {'basic': properties}}
+    response = client.put(url + "/ssl/server_keys/" + group_name,
+                          data=json.dumps(data),
+                          headers=headers)
+    return response
 
 def deploy_certificate(certificate):
     config = get_config()
@@ -249,11 +287,16 @@ def deploy_certificate(certificate):
         return {None: False}
     result = {}
     for destination in certificate.destinations.all():
-        if config['destinations'][destination.record]['type'] == 'AWS':
+        if config['destinations'][destination.record]['type'] == 'aws':
             result[destination.record] = install_certificate_in_aws(destination, 
                                                              certificate, 
                                                              config['destinations'][destination.record])
-                        
+            log.debug("Installed certificate %s with response %s" % (certificate.common_name, 
+                                                                     result[destination.record]))
+        elif config['destinations'][destination.record]['type'] == 'stingray':
+            result[destination.record] = install_certificate_in_stingray(destination, 
+                                                             certificate, 
+                                                             config['destinations'][destination.record])
         else:
             log.error("Unknown destination type %s" 
                       % config['destinations'][destination.record]['type'])

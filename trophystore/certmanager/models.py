@@ -35,7 +35,8 @@ class Choices(models.Model):
     RECORD_CHOICES = (
                       ('aws_351644144250', 'Cloud Services old "Mozilla" AWS account'),
                       ('aws_361527076523', 'Cloud Services "moz-svc-prod" AWS account'),
-                      ('aws_142069644989', 'Cloud Services old "moz-svc-dev" AWS account')
+                      ('aws_142069644989', 'Cloud Services old "moz-svc-dev" AWS account'),
+                      ('zlb11.ops.phx1.mozilla.com', 'Testing Zeus Stigray in phx1')
                      )
 
     record = models.CharField(max_length=255,
@@ -90,7 +91,9 @@ class Certificate(models.Model):
     root_cert = models.TextField(max_length=16384, blank=True)
     pkcs7 = models.TextField(max_length=2097152, blank=True)
     
-    
+    business_unit = models.CharField(max_length=255, 
+        blank=True)
+
     STATE_CHOICES = (
                      ('', 'None'),
                      ('req', 'Requested'),
