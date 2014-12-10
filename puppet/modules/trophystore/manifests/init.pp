@@ -40,6 +40,11 @@ class trophystore (
         $db_user = 'trophystore_user',
         $hmac_secret = undef,
         $django_secret = undef,
+        $ssl_cert_content = undef,
+        $ssl_key_content = undef,
+        $ssl_chain_content = undef,
+        $site_name = 'trophystore.opsec.allizom.org',
+        $app_config = undef,
         ) {
     anchor { 'trophystore::begin': } ->
     class { '::trophystore::install': } ->

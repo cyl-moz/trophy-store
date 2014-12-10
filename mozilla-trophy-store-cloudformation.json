@@ -135,8 +135,8 @@
                       "puppet module install puppetlabs-stdlib 2>&1 >> /var/log/initial_cfn-init.log",
                       "puppet module install puppetlabs-mysql 2>&1 >> /var/log/initial_cfn-init.log",
                       "puppet module install puppetlabs-apache 2>&1 >> /var/log/initial_cfn-init.log",
-                      "puppet apply --modulepath=/etc/puppet/modules -e \"include trophystore\" 2>&1 >> /var/log/initial_cfn-init.log",
-                      "/opt/trophy-store/.virtualenv/bin/python /opt/trophy-store/manage.py syncdb --noinput 2>&1 >> /var/log/initial_cfn-init.log",
+                      "echo puppet apply --modulepath=/etc/puppet/modules -e \"include trophystore\" 2>&1 >> /var/log/initial_cfn-init.log",
+                      "echo /opt/trophy-store/.virtualenv/bin/python /opt/trophy-store/manage.py syncdb --noinput 2>&1 >> /var/log/initial_cfn-init.log",
                       ""
                     ]
                   ]
